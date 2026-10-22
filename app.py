@@ -1,6 +1,6 @@
 import sqlite3
 from flask import Flask, g, jsonify, request
-from security_utils import hash_password
+from security_utils import hash_password, verify_password
 
 DATABASE = "recipes.db"
 
@@ -159,6 +159,25 @@ def register_user():
         "username": username,
         "email": email,
     }, 201
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    if not data or "username" not in data or "password" not in data:
+        return jsonify({"error": "username and password are required"}), 400
+    username = data["username"]
+    password = data["password"]
+    db = get_db()
+    user = db.execute(
+        "SELECT id, username, password_hash FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if not user or not verify_password(user["password_hash"], password):
+        return jsonify({"error": "Invalid username or password"}), 401
+    return jsonify({
+        "id": user["id"],
+        "username": user["username"],
+    }), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
