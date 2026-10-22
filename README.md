@@ -1,10 +1,9 @@
 # Recipe Box API
 
-A small, working Flask + SQLite API for keeping recipes. Full CRUD, clean
-status codes - and **no authentication at all**. Anyone who can reach it can
-read, change, or delete anything. In BE104 you fix that: real users, hashed
-passwords, JSON Web Tokens, ownership rules, and middleware.
+A small, working Flask + SQLite JSON API for keeping recipes, with real user accounts and clean
+status codes on all auth endpoints. In BE104, you extend it with hashed passwords, token-based auth, ownership rules, and middleware.
 
+------------------------------------------------------------------------
 ## Run it
 
 ```
@@ -14,15 +13,61 @@ python app.py
 
 Requires Python 3.10+ and Flask (`pip install -r requirements.txt`).
 
+------------------------------------------------------------------------
 ## Try it
 
 ```
-curl http://127.0.0.1:5000/recipes
-curl http://127.0.0.1:5000/recipes/1
-curl -X POST http://127.0.0.1:5000/recipes -H "Content-Type: application/json" \
-     -d '{"title": "Toast", "ingredients": "bread"}'
-curl -X DELETE http://127.0.0.1:5000/recipes/1
+curl http://localhost:5000/recipes
+curl http://localhost:5000/recipes/1
+curl -X POST http://localhost:5000/recipes \
+ -H "Content-Type: application/json" \
+ -d '{"title": "Toast", "ingredients": "bread"}'
+curl -X DELETE http://localhost:5000/recipes/1
 ```
+------------------------------------------------------------------------
+## Authentication
+
+Register a new user:
+```
+curl -i -X POST http://localhost:5000/users \
+-H "Content-Type: application/json" \
+-d '{"username": "test_user", "email": "test@example.com", "password": "secret123"}'
+```
+Expected: 201 Created with the new user in the response
+------------------------------------------------------------------------
+Try registering the same user again:
+```
+curl -i -X POST http://localhost:5000/users \
+-H "Content-Type: application/json" \
+-d '{"username": "test_user", "email": "test@example.com", "password": "secret123"}'
+```
+Expected: 409 Conflict and an error about the username or email already existing
+------------------------------------------------------------------------
+Log in with that user:
+```
+curl -i -X POST http://localhost:5000/login \
+-H "Content-Type: application/json" \
+-d '{"username": "test_user", "password": "secret123"}'
+```
+Expected: 200 OK and basic user info
+------------------------------------------------------------------------
+Bad login (missing password):
+```
+curl -i - X POST http://localhost:5000/login \
+-H "Content-Type: application/json" \
+-d '{"username": "test_user"}'
+```
+Expected: 400 Bad Request
+------------------------------------------------------------------------
+Bad login (wrong password):
+```
+curl -i -X POST http://localhost:5000/login \
+-H "Content-Type: application/json" \
+-d '{"username": "test_user", "password": "wrong"}'
+```
+Expected: 401 Unauthorized with a generic "Invalid username or password" message
+
+------------------------------------------------------------------------
 
 ## Endpoints
 
@@ -33,8 +78,10 @@ curl -X DELETE http://127.0.0.1:5000/recipes/1
 | POST | /recipes | 201 | 400 bad body · 409 duplicate title |
 | PATCH | /recipes/&lt;id&gt; | 200 | 400 · 404 · 409 |
 | DELETE | /recipes/&lt;id&gt; | 204 | 404 |
+| POST | /users | 201 | 400 bad body · 409 duplicate username/email |
+| POST | /login | 200 | 400 missing fields · 401 invalid credentials | 
 
 `is_public` is stored on every recipe but nothing enforces it yet - by the end
 of Unit 3, private recipes will only be visible to their owners.
 
-Note: Cloned and set up by Lindsay on my local machine.
+------------------------------------------------------------------------
