@@ -1,13 +1,6 @@
-"""Recipe Box API — BE104 course skeleton.
-
-A working Flask + SQLite CRUD API for recipes. It stores data perfectly —
-and it trusts everyone. There is no authentication and no authorization yet.
-That is the point: you will add both, lesson by lesson, in Units 2 and 3.
-"""
-
 import sqlite3
-
 from flask import Flask, g, jsonify, request
+from security_utils import hash_password
 
 DATABASE = "recipes.db"
 
@@ -127,6 +120,45 @@ def delete_recipe(recipe_id):
         return jsonify({"error": "recipe not found"}), 404
     return "", 204
 
+@app.post("/users")
+def register_user():
+    data = request.get_json()
+
+    if (
+        not data
+        or not data.get("username")
+        or not data.get("email")
+        or not data.get("password")
+    ):
+        return {"error": "username, email, and password are required"}, 400
+
+    db = get_db()
+
+    username = data["username"]
+    email = data["email"]
+    password = data["password"]
+
+    password_hash = hash_password(password)
+
+    try:
+        cursor = db.execute(
+            """
+            INSERT INTO users (username, email, password_hash)
+            VALUES (?, ?, ?)
+            """,
+            (username, email, password_hash),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return {"error": "Username or email already exists"}, 409
+
+    new_user_id = cursor.lastrowid
+
+    return {
+        "id": new_user_id,
+        "username": username,
+        "email": email,
+    }, 201
 
 if __name__ == "__main__":
     app.run(debug=True)
