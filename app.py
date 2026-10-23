@@ -1,6 +1,6 @@
 import sqlite3
 from flask import Flask, g, jsonify, request
-from security_utils import hash_password, verify_password
+from security_utils import hash_password, verify_password, DUMMY_HASH
 
 DATABASE = "recipes.db"
 
@@ -172,8 +172,16 @@ def login():
         "SELECT id, username, password_hash FROM users WHERE username = ?",
         (username,),
     ).fetchone()
-    if not user or not verify_password(user["password_hash"], password):
+    if user:
+        stored_hash = user["password_hash"]
+    else:
+        stored_hash = DUMMY_HASH
+
+    password_ok = verify_password(stored_hash, password)
+
+    if not user or not password_ok:
         return jsonify({"error": "Invalid username or password"}), 401
+
     return jsonify({
         "id": user["id"],
         "username": user["username"],
