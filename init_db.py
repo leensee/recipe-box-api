@@ -52,5 +52,5 @@ if existing == 0:
     connection.commit()
     print(f"Created recipes.db and seeded {len(SEED)} recipes.")
 else:
-    print(f"recipes.db already has {existing} recipes - nothing to do.")
+    print(f"Schema up to date; recipes.db already has {existing} recipes.")
 connection.close()

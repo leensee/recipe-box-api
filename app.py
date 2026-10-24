@@ -3,6 +3,10 @@ from flask import Flask, g, jsonify, request
 from security_utils import hash_password, verify_password, DUMMY_HASH
 
 DATABASE = "recipes.db"
+RECIPE_FIELDS_ERROR = (
+    "Title and ingredients must be non-empty strings; "
+    "instructions must be a string"
+)
 
 app = Flask(__name__)
 
@@ -49,20 +53,29 @@ def get_recipe(recipe_id):
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
     if row is None:
-        return jsonify({"error": "recipe not found"}), 404
+        return jsonify({"error": "Recipe not found"}), 404
     return jsonify(recipe_to_dict(row))
 
 
 @app.post("/recipes")
 def create_recipe():
     data = request.get_json(silent=True)
-    if not data or not data.get("title") or not data.get("ingredients"):
-        return jsonify({"error": "title and ingredients are required"}), 400
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("title"), str)
+        or not isinstance(data.get("ingredients"), str)
+        or not isinstance(data.get("instructions", ""), str)
+        or not data["title"]
+        or not data["ingredients"]
+    ):
+        return jsonify({"error": RECIPE_FIELDS_ERROR}), 400
     db = get_db()
     try:
-        cur = db.execute(
-            "INSERT INTO recipes (title, ingredients, instructions, is_public)"
-            " VALUES (?, ?, ?, ?)",
+        cursor = db.execute(
+            """
+            INSERT INTO recipes (title, ingredients, instructions, is_public)
+            VALUES (?, ?, ?, ?)
+            """,
             (
                 data["title"],
                 data["ingredients"],
@@ -72,9 +85,11 @@ def create_recipe():
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a recipe with that title already exists"}), 409
+                return jsonify({
+            "error": "A recipe with that title already exists"
+        }), 409
     row = db.execute(
-        "SELECT * FROM recipes WHERE id = ?", (cur.lastrowid,)
+        "SELECT * FROM recipes WHERE id = ?", (cursor.lastrowid,)
     ).fetchone()
     return jsonify(recipe_to_dict(row)), 201
 
@@ -82,29 +97,36 @@ def create_recipe():
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
     data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "a JSON body is required"}), 400
+    if not isinstance(data, dict) or not data:
+        return jsonify({"error": "A JSON body is required"}), 400
     fields, values = [], []
     for column in ("title", "ingredients", "instructions"):
         if column in data:
+            value = data[column]
+            if not isinstance(value, str) or (
+                column != "instructions" and not value
+            ):
+                return jsonify({"error": RECIPE_FIELDS_ERROR}), 400
             fields.append(f"{column} = ?")
-            values.append(data[column])
+            values.append(value)
     if "is_public" in data:
         fields.append("is_public = ?")
         values.append(1 if data["is_public"] else 0)
     if not fields:
-        return jsonify({"error": "nothing to update"}), 400
+        return jsonify({"error": "Nothing to update"}), 400
     values.append(recipe_id)
     db = get_db()
     try:
-        cur = db.execute(
+        cursor = db.execute(
             f"UPDATE recipes SET {', '.join(fields)} WHERE id = ?", values
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return jsonify({"error": "a recipe with that title already exists"}), 409
-    if cur.rowcount == 0:
-        return jsonify({"error": "recipe not found"}), 404
+        return jsonify({
+            "error": "A recipe with that title already exists"
+        }), 409
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Recipe not found"}), 404
     row = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
@@ -114,24 +136,29 @@ def update_recipe(recipe_id):
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
     db = get_db()
-    cur = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+    cursor = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
-    if cur.rowcount == 0:
-        return jsonify({"error": "recipe not found"}), 404
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Recipe not found"}), 404
     return "", 204
 
-@app.post("/users")
+
+@app.post("/register")
 def register_user():
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
     if (
-        not data
-        or not data.get("username")
-        or not data.get("email")
-        or not data.get("password")
+        not isinstance(data, dict)
+        or not isinstance(data.get("username"), str)
+        or not isinstance(data.get("email"), str)
+        or not isinstance(data.get("password"), str)
+        or not data["username"]
+        or not data["email"]
+        or not data["password"]
     ):
-        return {"error": "username, email, and password are required"}, 400
-
+        return jsonify({
+            "error": "Username, email, and password are required"
+        }), 400
     db = get_db()
 
     username = data["username"]
@@ -150,21 +177,28 @@ def register_user():
         )
         db.commit()
     except sqlite3.IntegrityError:
-        return {"error": "Username or email already exists"}, 409
+        return jsonify({"error": "Username or email already exists"}), 409
 
     new_user_id = cursor.lastrowid
 
-    return {
+    return jsonify({
         "id": new_user_id,
         "username": username,
         "email": email,
-    }, 201
+    }), 201
 
-@app.route("/login", methods=["POST"])
+
+@app.post("/login")
 def login():
-    data = request.get_json()
-    if not data or "username" not in data or "password" not in data:
-        return jsonify({"error": "username and password are required"}), 400
+    data = request.get_json(silent=True)
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("username"), str)
+        or not isinstance(data.get("password"), str)
+        or not data["username"]
+        or not data["password"]
+    ):
+        return jsonify({"error": "Username and password are required"}), 400
     username = data["username"]
     password = data["password"]
     db = get_db()
@@ -186,6 +220,7 @@ def login():
         "id": user["id"],
         "username": user["username"],
     }), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True)

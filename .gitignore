@@ -11,3 +11,6 @@ __pycache__/
 
 # Secrets - never commit these
 .env
+
+# macOS Finder metadata
+.DS_Store
