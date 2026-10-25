@@ -1,7 +1,16 @@
+import os
 import sqlite3
+import jwt
 from flask import Flask, g, jsonify, request
 from security_utils import hash_password, verify_password, DUMMY_HASH
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
+load_dotenv()
+
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if JWT_SECRET is None:
+    raise RuntimeError("JWT_SECRET environment variable is not set")
 DATABASE = "recipes.db"
 RECIPE_FIELDS_ERROR = (
     "Title and ingredients must be non-empty strings; "
@@ -216,9 +225,16 @@ def login():
     if not user or not password_ok:
         return jsonify({"error": "Invalid username or password"}), 401
 
+    payload = {
+        "sub": str(user["id"]),
+        "exp": datetime.utcnow() + timedelta(hours=1),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
     return jsonify({
         "id": user["id"],
         "username": user["username"],
+        "token": token,
     }), 200
 
 
