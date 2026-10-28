@@ -1,10 +1,10 @@
 import os
 import sqlite3
-import jwt
+import jwt  # pyright: ignore[reportMissingImports]
 from flask import Flask, g, jsonify, request
 from security_utils import hash_password, verify_password, DUMMY_HASH
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
+from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 
@@ -27,7 +27,7 @@ def get_db():
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
 
-
+  
 @app.teardown_appcontext
 def close_db(exception):
     db = g.pop("db", None)
@@ -68,6 +68,21 @@ def get_recipe(recipe_id):
 
 @app.post("/recipes")
 def create_recipe():
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ")
+    if len(parts) != 2 or parts[0] != "Bearer":
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token, 
+            os.environ["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    user_id = payload.get("sub")
+    print("AUTHENTICATED USER:", user_id)
     data = request.get_json(silent=True)
     if (
         not isinstance(data, dict)
@@ -105,6 +120,21 @@ def create_recipe():
 
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ")
+    if len(parts) != 2 or parts[0] != "Bearer":
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token, 
+            os.environ["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    user_id = payload.get("sub")
+    print("AUTHENTICATED USER:", user_id)
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"error": "A JSON body is required"}), 400
@@ -144,6 +174,21 @@ def update_recipe(recipe_id):
 
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ")
+    if len(parts) != 2 or parts[0] != "Bearer":
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token, 
+            os.environ["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+    except jwt.PyJWTError:
+        return jsonify({"error": "Invalid or expired token"}), 401
+    user_id = payload.get("sub")
+    print("AUTHENTICATED USER:", user_id)
     db = get_db()
     cursor = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
@@ -155,7 +200,6 @@ def delete_recipe(recipe_id):
 @app.post("/register")
 def register_user():
     data = request.get_json(silent=True)
-
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("username"), str)
@@ -227,7 +271,7 @@ def login():
 
     payload = {
         "sub": str(user["id"]),
-        "exp": datetime.utcnow() + timedelta(hours=1),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
