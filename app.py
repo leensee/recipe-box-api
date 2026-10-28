@@ -82,7 +82,6 @@ def create_recipe():
     except jwt.PyJWTError:
         return jsonify({"error": "Invalid or expired token"}), 401
     user_id = payload.get("sub")
-    print("AUTHENTICATED USER:", user_id)
     data = request.get_json(silent=True)
     if (
         not isinstance(data, dict)
