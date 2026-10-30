@@ -71,7 +71,7 @@ def create_recipe():
     auth_header = request.headers.get("Authorization", "")
     parts = auth_header.split(" ")
     if len(parts) != 2 or parts[0] != "Bearer":
-        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+        return jsonify({"error": "Invalid Authorization header"}), 401
     token = parts[1]
     try:
         payload = jwt.decode(
@@ -79,8 +79,10 @@ def create_recipe():
             os.environ["JWT_SECRET"],
             algorithms=["HS256"],
         )
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired"}), 401
     except jwt.PyJWTError:
-        return jsonify({"error": "Invalid or expired token"}), 401
+        return jsonify({"error": "Invalid token"}), 401
     user_id = payload.get("sub")
     data = request.get_json(silent=True)
     if (
@@ -130,8 +132,10 @@ def update_recipe(recipe_id):
             os.environ["JWT_SECRET"],
             algorithms=["HS256"],
         )
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired"}), 401
     except jwt.PyJWTError:
-        return jsonify({"error": "Invalid or expired token"}), 401
+        return jsonify({"error": "Invalid token"}), 401
     user_id = payload.get("sub")
     print("AUTHENTICATED USER:", user_id)
     data = request.get_json(silent=True)
@@ -184,8 +188,10 @@ def delete_recipe(recipe_id):
             os.environ["JWT_SECRET"],
             algorithms=["HS256"],
         )
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired"}), 401
     except jwt.PyJWTError:
-        return jsonify({"error": "Invalid or expired token"}), 401
+        return jsonify({"error": "Invalid token"}), 401
     user_id = payload.get("sub")
     print("AUTHENTICATED USER:", user_id)
     db = get_db()
