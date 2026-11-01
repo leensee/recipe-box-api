@@ -95,14 +95,10 @@ def get_recipe(recipe_id):
         message, status = error
         return jsonify({"error": message}), status
     print("AUTHENTICATED USER:", user_id, type(user_id))
-    if user_id is None:
-        return jsonify({"error": "Invalid user in token"}), 401
-    try:
-        user_id = int(user_id)
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid user in token"}), 401
     if row["owner_id"] is None or row["owner_id"] != user_id:
-        return jsonify({"error": "You do not have permission to view this recipe"}), 403
+        return jsonify(
+            {"error": "You do not have permission to view this recipe"}
+        ), 403
     return jsonify(recipe_to_dict(row))
 
 
