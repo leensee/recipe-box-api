@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     title TEXT NOT NULL UNIQUE,
     ingredients TEXT NOT NULL,
     instructions TEXT NOT NULL DEFAULT '',
-    is_public INTEGER NOT NULL DEFAULT 1
+    is_public INTEGER NOT NULL DEFAULT 1,
+    owner_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -42,6 +43,14 @@ SEED = [
 
 connection = sqlite3.connect("recipes.db")
 connection.executescript(SCHEMA)
+# Ensure owner_id column exists on recipes for existing databases
+has_owner = connection.execute(
+    "PRAGMA table_info(recipes)"
+).fetchall()
+owner_column_present = any(col[1] == "owner_id" for col in has_owner)
+if not owner_column_present:
+    connection.execute("ALTER TABLE recipes ADD COLUMN owner_id INTEGER;")
+    connection.commit()
 existing = connection.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
 if existing == 0:
     connection.executemany(
