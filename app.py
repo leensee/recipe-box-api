@@ -42,53 +42,6 @@ def load_authenticated_identity():
         return None, None, ("Invalid user in token", 401)
     return user_id, role, None
 
-def get_authenticated_identity():
-    auth_header = request.headers.get("Authorization", "")
-    parts = auth_header.split(" ")
-    if len(parts) != 2 or parts[0] != "Bearer":
-        return None, None, ("Missing or invalid Authorization header", 401)
-    token = parts[1]
-    try:
-        payload = jwt.decode(
-            token,
-            os.environ["JWT_SECRET"],
-            algorithms=["HS256"],
-        )
-    except jwt.ExpiredSignatureError:
-        return None, None, ("Token has expired", 401)
-    except jwt.PyJWTError:
-        return None, None, ("Invalid token", 401)
-    user_id = payload.get("sub")
-    role = payload.get("role")
-    try:
-        user_id = int(user_id)
-    except (TypeError, ValueError):
-        return None, None, ("Invalid user in token", 401)
-    return user_id, role, None
-
-def get_authenticated_user_id():
-    auth_header = request.headers.get("Authorization", "")
-    parts = auth_header.split(" ")
-    if len(parts) != 2 or parts[0] != "Bearer":
-        return None, ("Missing or invalid Authorization header", 401)
-    token = parts[1]
-    try:
-        payload = jwt.decode(
-            token,
-            os.environ["JWT_SECRET"],
-            algorithms=["HS256"],
-        )
-    except jwt.ExpiredSignatureError:
-        return None, ("Token has expired", 401)
-    except jwt.PyJWTError:
-        return None, ("Invalid token", 401)
-    user_id = payload.get("sub")
-    try:
-        user_id = int(user_id)
-    except (TypeError, ValueError):
-        return None, ("Invalid user in token", 401)
-    return user_id, None
-
 def can_modify_recipe(user_id, role, recipe):
     is_admin = (role == "admin")
     is_owner = (recipe["owner_id"] == user_id)
@@ -150,15 +103,12 @@ def get_recipe(recipe_id):
     ).fetchone()
     if row is None:
         return jsonify({"error": "Recipe not found"}), 404
-    # If recipe is public, anyone can read it
     if row["is_public"] == 1:
         return jsonify(recipe_to_dict(row))
-    # Recipe is private: only owner may read
-    user_id, error = get_authenticated_user_id()
+    user_id, role, error = load_authenticated_identity()
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    print("AUTHENTICATED USER:", user_id, type(user_id))
     if row["owner_id"] is None or row["owner_id"] != user_id:
         return jsonify(
             {"error": "You do not have permission to view this recipe"}
@@ -254,12 +204,10 @@ def update_recipe(recipe_id):
 
 
 @app.delete("/recipes/<int:recipe_id>")
+@require_auth
 def delete_recipe(recipe_id):
-    user_id, role, error = get_authenticated_identity()
-    if error:
-        message, status = error
-        return jsonify({"error": message}), status
-    print("AUTHENTICATED USER:", user_id, "ROLE:", role)
+    user_id = g.current_user_id
+    role = g.current_user_role
     db = get_db()
     recipe = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
