@@ -5,6 +5,7 @@ from flask import Flask, g, jsonify, request
 from security_utils import hash_password, verify_password, DUMMY_HASH
 from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 
 load_dotenv()
 
@@ -18,6 +19,28 @@ RECIPE_FIELDS_ERROR = (
 )
 
 app = Flask(__name__)
+
+def load_authenticated_identity():
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ")
+    if len(parts) != 2 or parts[0] != "Bearer":
+        return None, None, ("Missing or invalid Authorization header", 401)
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token,
+            os.environ["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+    except jwt.PyJWTError:
+        return None, None, ("Invalid token", 401)
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return None, None, ("Invalid user in token", 401)
+    return user_id, role, None
 
 def get_authenticated_identity():
     auth_header = request.headers.get("Authorization", "")
@@ -70,6 +93,18 @@ def can_modify_recipe(user_id, role, recipe):
     is_admin = (role == "admin")
     is_owner = (recipe["owner_id"] == user_id)
     return is_admin or is_owner
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user_id, role, error = load_authenticated_identity()
+        if error:
+            message, status = error
+            return jsonify({"error": message}), status
+        g.current_user_id = user_id
+        g.current_user_role = role
+        return f(*args, **kwargs)
+    return wrapper
 
 def get_db():
     if "db" not in g:
@@ -132,12 +167,9 @@ def get_recipe(recipe_id):
 
 
 @app.post("/recipes")
+@require_auth
 def create_recipe():
-    user_id, error = get_authenticated_user_id()
-    if error:
-        message, status = error
-        return jsonify({"error": message}), status
-    print("AUTHENTICATED USER:", user_id)
+    user_id = g.current_user_id
     data = request.get_json(silent=True)
     if (
         not isinstance(data, dict)
@@ -175,20 +207,16 @@ def create_recipe():
 
 
 @app.patch("/recipes/<int:recipe_id>")
+@require_auth
 def update_recipe(recipe_id):
-    user_id, role, error = get_authenticated_identity()
-    if error:
-        message, status = error
-        return jsonify({"error": message}), status
-    print("AUTHENTICATED USER:", user_id, type(user_id))
+    user_id = g.current_user_id
+    role = g.current_user_role
     db = get_db()
-    # 1) Load the recipe first so we can check ownership
     recipe = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
     if recipe is None:
         return jsonify({"error": "Recipe not found"}), 404
-    # 2) Enforce ownership: only the owner can update
     if not can_modify_recipe(user_id, role, recipe):
         return jsonify({"error": "You do not have permission to modify this recipe"}), 403
     data = request.get_json(silent=True)
