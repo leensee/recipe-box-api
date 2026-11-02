@@ -19,6 +19,30 @@ RECIPE_FIELDS_ERROR = (
 
 app = Flask(__name__)
 
+def get_authenticated_identity():
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ")
+    if len(parts) != 2 or parts[0] != "Bearer":
+        return None, None, ("Missing or invalid Authorization header", 401)
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token,
+            os.environ["JWT_SECRET"],
+            algorithms=["HS256"],
+        )
+    except jwt.ExpiredSignatureError:
+        return None, None, ("Token has expired", 401)
+    except jwt.PyJWTError:
+        return None, None, ("Invalid token", 401)
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return None, None, ("Invalid user in token", 401)
+    return user_id, role, None
+
 def get_authenticated_user_id():
     auth_header = request.headers.get("Authorization", "")
     parts = auth_header.split(" ")
@@ -41,6 +65,11 @@ def get_authenticated_user_id():
     except (TypeError, ValueError):
         return None, ("Invalid user in token", 401)
     return user_id, None
+
+def can_modify_recipe(user_id, role, recipe):
+    is_admin = (role == "admin")
+    is_owner = (recipe["owner_id"] == user_id)
+    return is_admin or is_owner
 
 def get_db():
     if "db" not in g:
@@ -147,7 +176,7 @@ def create_recipe():
 
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
-    user_id, error = get_authenticated_user_id()
+    user_id, role, error = get_authenticated_identity()
     if error:
         message, status = error
         return jsonify({"error": message}), status
@@ -160,10 +189,8 @@ def update_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "Recipe not found"}), 404
     # 2) Enforce ownership: only the owner can update
-    if recipe["owner_id"] is None or recipe["owner_id"] != user_id:
-        return jsonify(
-            {"error": "You do not have permission to modify this recipe"}
-        ), 403
+    if not can_modify_recipe(user_id, role, recipe):
+        return jsonify({"error": "You do not have permission to modify this recipe"}), 403
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"error": "A JSON body is required"}), 400
@@ -200,26 +227,24 @@ def update_recipe(recipe_id):
 
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
-    user_id, error = get_authenticated_user_id()
+    user_id, role, error = get_authenticated_identity()
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    print("AUTHENTICATED USER:", user_id)
+    print("AUTHENTICATED USER:", user_id, "ROLE:", role)
     db = get_db()
     recipe = db.execute(
         "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
     ).fetchone()
     if recipe is None:
         return jsonify({"error": "Recipe not found"}), 404
-
-    if recipe["owner_id"] is None or recipe["owner_id"] != user_id:
+    if not can_modify_recipe(user_id, role, recipe):
         return jsonify(
             {"error": "You do not have permission to delete this recipe"}
         ), 403
     db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
     return "", 204
-
 
 @app.post("/register")
 def register_user():
@@ -280,7 +305,7 @@ def login():
     password = data["password"]
     db = get_db()
     user = db.execute(
-        "SELECT id, username, password_hash FROM users WHERE username = ?",
+        "SELECT id, username, password_hash, role FROM users WHERE username = ?",
         (username,),
     ).fetchone()
     if user:
@@ -295,6 +320,7 @@ def login():
 
     payload = {
         "sub": str(user["id"]),
+        "role": user["role"],
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
@@ -302,6 +328,7 @@ def login():
     return jsonify({
         "id": user["id"],
         "username": user["username"],
+        "role": user["role"],
         "token": token,
     }), 200
 
