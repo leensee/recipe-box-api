@@ -78,15 +78,17 @@ Expected: 401 Unauthorized with a generic "Invalid username or password" message
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | GET | / | 200 | |
-| GET | /recipes | 200 | |
-| GET | /recipes/&lt;id&gt; | 200 | 404 |
-| POST | /recipes | 201 | 400 bad body · 409 duplicate title |
-| PATCH | /recipes/&lt;id&gt; | 200 | 400 · 404 · 409 |
-| DELETE | /recipes/&lt;id&gt; | 204 | 404 |
+| GET | /recipes | 200 | 401 invalid token (token optional; adds your private recipes) |
+| GET | /recipes/&lt;id&gt; | 200 | 401 · 403 private recipe you don't own · 404 |
+| POST | /recipes | 201 | 400 bad body · 401 · 409 duplicate title |
+| PATCH | /recipes/&lt;id&gt; | 200 | 400 · 401 · 403 not owner or admin · 404 · 409 |
+| DELETE | /recipes/&lt;id&gt; | 204 | 401 · 403 not owner or admin · 404 |
 | POST | /register | 201 | 400 bad body · 409 duplicate username/email |
 | POST | /login | 200 | 400 missing fields · 401 invalid credentials |
 
-`is_public` is stored on every recipe but nothing enforces it yet - by the end
-of Unit 3, private recipes will only be visible to their owners.
+`is_public` controls visibility: anyone can read public recipes, and private
+recipes are visible only to their owner (send `Authorization: Bearer <token>`
+from `/login`). Creating, editing, and deleting recipes requires a token, and
+only the recipe's owner or an admin can edit or delete it.
 
 ------------------------------------------------------------------------

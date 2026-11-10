@@ -91,7 +91,24 @@ def hello():
 
 @app.get("/recipes")
 def list_recipes():
-    rows = get_db().execute("SELECT * FROM recipes ORDER BY id").fetchall()
+    db = get_db()
+    if "Authorization" not in request.headers:
+        rows = db.execute(
+            "SELECT * FROM recipes WHERE is_public = 1 ORDER BY id"
+        ).fetchall()
+        return jsonify([recipe_to_dict(r) for r in rows])
+    user_id, role, error = load_authenticated_identity()
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
+    rows = db.execute(
+        """
+        SELECT * FROM recipes
+        WHERE is_public = 1 OR owner_id = ?
+        ORDER BY id
+        """,
+        (user_id,),
+    ).fetchall()
     return jsonify([recipe_to_dict(r) for r in rows])
 
 
