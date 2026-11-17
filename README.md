@@ -1,94 +1,118 @@
 # Recipe Box API
 
-A small, working Flask + SQLite JSON API for keeping recipes, with real user accounts, hashed passwords, and clean status codes on all auth endpoints. In BE104, you extend it with token-based auth, ownership rules, and middleware.
+A Flask + SQLite JSON API for storing recipes, with user accounts, token-based authentication, and per-recipe access control.
 
-------------------------------------------------------------------------
-## Run it
+**Where it started:** an open CRUD skeleton with no notion of users. Anyone could list every recipe (private ones included), edit any recipe, or delete one permanently, all without identifying themselves.
+
+**Where it is now:**
+- **Accounts:** registration with scrypt-hashed passwords.
+- **Login:** a generic error for every failure, and equalized response times, so neither reveals whether a username exists.
+- **Tokens:** a signed JWT issued at login and required on every write.
+- **Access control:** owner and admin rules on reading private recipes and on edits and deletes.
+- **Input validation:** a JSON 400 for any bad request body, instead of a crash.
+
+## Setup
+
+Requires Python 3.10+.
 
 ```
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+```
+
+Create a `.env` file in the project root with a signing secret. `.env` is git-ignored, so never commit it.
+
+```
+python -c "import secrets; print('JWT_SECRET=' + secrets.token_urlsafe(32))" > .env
+```
+
+The app refuses to start without `JWT_SECRET`. Use at least 32 bytes; the command above generates one.
+
+Then create the database and start the server:
+
+```
 python init_db.py
 python app.py
 ```
 
-Requires Python 3.10+.
+The server runs at `http://localhost:5000`. `init_db.py` seeds three recipes, one of which ("Secret family hot sauce") is private and has no owner. It's safe to run again: it adds any missing columns to an existing database and only seeds an empty one.
 
-------------------------------------------------------------------------
-## Try it
-
-```
-curl http://localhost:5000/recipes
-curl http://localhost:5000/recipes/1
-curl -X POST http://localhost:5000/recipes \
--H "Content-Type: application/json" \
--d '{"title": "Toast", "ingredients": "bread"}'
-curl -X DELETE http://localhost:5000/recipes/1
-```
-------------------------------------------------------------------------
 ## Authentication
 
-Register a new user:
+Register, then log in to get a token:
+
 ```
 curl -i -X POST http://localhost:5000/register \
 -H "Content-Type: application/json" \
 -d '{"username": "test_user", "email": "test@example.com", "password": "secret123"}'
-```
-Expected: 201 Created with the new user in the response
 
-------------------------------------------------------------------------
-Try registering the same user again:
-```
-curl -i -X POST http://localhost:5000/register \
--H "Content-Type: application/json" \
--d '{"username": "test_user", "email": "test@example.com", "password": "secret123"}'
-```
-Expected: 409 Conflict and an error about the username or email already existing
-
-------------------------------------------------------------------------
-Log in with that user:
-```
 curl -i -X POST http://localhost:5000/login \
 -H "Content-Type: application/json" \
 -d '{"username": "test_user", "password": "secret123"}'
 ```
-Expected: 200 OK and basic user info
 
-------------------------------------------------------------------------
-Bad login (missing password):
+The login response includes a `token`, which is valid for one hour. Send it on protected requests:
+
 ```
-curl -i -X POST http://localhost:5000/login \
+TOKEN=<paste token here>
+
+curl -i -X POST http://localhost:5000/recipes \
+-H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
--d '{"username": "test_user"}'
+-d '{"title": "Toast", "ingredients": "bread", "is_public": false}'
 ```
-Expected: 400 Bad Request
 
-------------------------------------------------------------------------
-Bad login (wrong password):
-```
-curl -i -X POST http://localhost:5000/login \
--H "Content-Type: application/json" \
--d '{"username": "test_user", "password": "wrong"}'
-```
-Expected: 401 Unauthorized with a generic "Invalid username or password" message
+Logging out happens on the client: discard the token. The server keeps no sessions.
 
-------------------------------------------------------------------------
+## Access rules
+
+| Action | Who can do it |
+|---|---|
+| Read a public recipe | Anyone |
+| Read a private recipe | Its owner, or an admin |
+| List recipes | Anyone sees public recipes; with a token, you also see your own private ones (admins see all) |
+| Create a recipe | Any logged-in user (you become its owner) |
+| Edit or delete a recipe | Its owner, or an admin |
+
+New accounts have the `user` role. To make an account an admin, update the database directly:
+
+```
+sqlite3 recipes.db "UPDATE users SET role = 'admin' WHERE username = 'test_user';"
+```
+
+The role is read from the token, so log in again afterwards.
 
 ## Endpoints
 
-| Method | Path | Success | Errors |
-|---|---|---|---|
-| GET | / | 200 | |
-| GET | /recipes | 200 | 401 invalid token (token optional; adds your private recipes) |
-| GET | /recipes/&lt;id&gt; | 200 | 401 · 403 private recipe you don't own · 404 |
-| POST | /recipes | 201 | 400 bad body · 401 · 409 duplicate title |
-| PATCH | /recipes/&lt;id&gt; | 200 | 400 · 401 · 403 not owner or admin · 404 · 409 |
-| DELETE | /recipes/&lt;id&gt; | 204 | 401 · 403 not owner or admin · 404 |
-| POST | /register | 201 | 400 bad body · 409 duplicate username/email |
-| POST | /login | 200 | 400 missing fields · 401 invalid credentials |
+| Method | Path | Auth | Success | Errors |
+|---|---|---|---|---|
+| GET | / | None | 200 | |
+| POST | /register | None | 201 | 400 bad body · 409 duplicate username/email |
+| POST | /login | None | 200 + token | 400 missing fields · 401 invalid credentials |
+| GET | /recipes | Optional | 200 | 401 invalid or expired token |
+| GET | /recipes/&lt;id&gt; | Private recipes only | 200 | 401 · 403 not owner or admin · 404 |
+| POST | /recipes | Required | 201 | 400 bad body · 401 · 409 duplicate title |
+| PATCH | /recipes/&lt;id&gt; | Required | 200 | 400 · 401 · 403 not owner or admin · 404 · 409 |
+| DELETE | /recipes/&lt;id&gt; | Required | 204 | 401 · 403 not owner or admin · 404 |
 
-`is_public` controls visibility: anyone can read public recipes, and private
-recipes are visible only to their owner (send `Authorization: Bearer <token>`
-from `/login`). Creating, editing, and deleting recipes requires a token, and
-only the recipe's owner or an admin can edit or delete it.
+How the error codes are used:
+- **401** means the API couldn't establish who you are. A missing or malformed `Authorization` header, an invalid or tampered token, and an expired token each get their own error message (`"Token has expired"` for the last).
+- **403** means you're logged in but not allowed to do that.
+- **409** only ever means a real duplicate.
 
-------------------------------------------------------------------------
+## How it's protected
+
+- **Passwords** are stored as salted scrypt hashes (`security_utils.py`), never as plain text.
+- **`@require_auth`** (in `app.py`) guards every write route. It verifies the token's signature and expiry before the route runs, then exposes the caller's identity as `g.current_user_id` and `g.current_user_role`.
+- **`can_modify_recipe`** is the single owner-or-admin rule. It decides who can read a private recipe and who can edit or delete any recipe. The owner always comes from the verified token, never from the request.
+- **All SQL is parameterized,** so user input is always treated as data, never as part of a query.
+
+The vulnerabilities found and fixed along the way are logged in `SECURITY_NOTES.md`. Test evidence for authentication and authorization is in `SECURITY_AUDIT.md`.
+
+## Known limitations
+
+- **No rate limiting.** `/login` and `/register` are public, and each request runs a deliberately slow scrypt hash, so they're open to brute-force and resource-exhaustion attacks. The fix belongs at an API gateway or proxy.
+- **Tokens can't be revoked early.** A token stays valid until it expires, even after the user logs out.
+- **No password reset or account recovery.**
+- **Development server only.** `python app.py` runs Flask's debug server over plain HTTP. In production, use a proper WSGI server behind HTTPS, so tokens and passwords aren't sent in the clear.

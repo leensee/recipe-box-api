@@ -32,6 +32,8 @@ def load_authenticated_identity():
             os.environ["JWT_SECRET"],
             algorithms=["HS256"],
         )
+    except jwt.ExpiredSignatureError:
+        return None, None, ("Token has expired", 401)
     except jwt.PyJWTError:
         return None, None, ("Invalid token", 401)
     user_id = payload.get("sub")
@@ -66,7 +68,7 @@ def get_db():
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
 
-  
+
 @app.teardown_appcontext
 def close_db(exception):
     db = g.pop("db", None)
@@ -101,14 +103,17 @@ def list_recipes():
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    rows = db.execute(
-        """
-        SELECT * FROM recipes
-        WHERE is_public = 1 OR owner_id = ?
-        ORDER BY id
-        """,
-        (user_id,),
-    ).fetchall()
+    if role == "admin":
+        rows = db.execute("SELECT * FROM recipes ORDER BY id").fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT * FROM recipes
+            WHERE is_public = 1 OR owner_id = ?
+            ORDER BY id
+            """,
+            (user_id,),
+        ).fetchall()
     return jsonify([recipe_to_dict(r) for r in rows])
 
 
@@ -126,7 +131,7 @@ def get_recipe(recipe_id):
     if error:
         message, status = error
         return jsonify({"error": message}), status
-    if row["owner_id"] is None or row["owner_id"] != user_id:
+    if not can_modify_recipe(user_id, role, row):
         return jsonify(
             {"error": "You do not have permission to view this recipe"}
         ), 403
@@ -151,7 +156,9 @@ def create_recipe():
     try:
         cursor = db.execute(
             """
-            INSERT INTO recipes (title, ingredients, instructions, is_public, owner_id)
+            INSERT INTO recipes (
+            title, ingredients, instructions, is_public, owner_id
+            )
             VALUES (?, ?, ?, ?, ?)
             """,
             (
@@ -185,7 +192,9 @@ def update_recipe(recipe_id):
     if recipe is None:
         return jsonify({"error": "Recipe not found"}), 404
     if not can_modify_recipe(user_id, role, recipe):
-        return jsonify({"error": "You do not have permission to modify this recipe"}), 403
+        return jsonify(
+            {"error": "You do not have permission to modify this recipe"}
+            ), 403
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"error": "A JSON body is required"}), 400
@@ -298,7 +307,11 @@ def login():
     password = data["password"]
     db = get_db()
     user = db.execute(
-        "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+        """
+        SELECT id, username, password_hash, role
+        FROM users
+        WHERE username = ?
+        """,
         (username,),
     ).fetchone()
     if user:

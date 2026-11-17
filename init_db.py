@@ -44,13 +44,19 @@ SEED = [
 
 connection = sqlite3.connect("recipes.db")
 connection.executescript(SCHEMA)
-# Ensure owner_id column exists on recipes for existing databases
 has_owner = connection.execute(
     "PRAGMA table_info(recipes)"
 ).fetchall()
 owner_column_present = any(col[1] == "owner_id" for col in has_owner)
 if not owner_column_present:
     connection.execute("ALTER TABLE recipes ADD COLUMN owner_id INTEGER;")
+    connection.commit()
+user_columns = connection.execute("PRAGMA table_info(users)").fetchall()
+role_column_present = any(col[1] == "role" for col in user_columns)
+if not role_column_present:
+    connection.execute(
+        "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';"
+    )
     connection.commit()
 existing = connection.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
 if existing == 0:
