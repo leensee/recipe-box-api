@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user'
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_nocase
+    ON users (username COLLATE NOCASE);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_nocase
+    ON users (email COLLATE NOCASE);
 """
 
 SEED = [
@@ -68,5 +73,8 @@ if existing == 0:
     connection.commit()
     print(f"Created recipes.db and seeded {len(SEED)} recipes.")
 else:
-    print(f"Schema up to date; recipes.db already has {existing} recipes.")
+    print(
+        "Schema up to date (tables, columns, and indexes); "
+        f"recipes.db already has {existing} recipes."
+    )
 connection.close()

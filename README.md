@@ -76,6 +76,8 @@ Logging out happens on the client: discard the token. The server keeps no sessio
 | Create a recipe | Any logged-in user (you become its owner) |
 | Edit or delete a recipe | Its owner, or an admin |
 
+Usernames and emails are unique regardless of case (`Test_User` and `test_user` count as the same name), and login matches usernames case-insensitively. Case is compared for ASCII letters only.
+
 New accounts have the `user` role. To make an account an admin, update the database directly:
 
 ```bash
@@ -99,7 +101,7 @@ The role is read from the token, so log in again afterwards.
 
 How the error codes are used:
 
-- **401** means the API couldn't establish who you are. A missing or malformed `Authorization` header, an invalid or tampered token, and an expired token each get their own error message (`"Token has expired"` for the last).
+- **401** means the API couldn't establish who you are. A missing or malformed `Authorization` header, an invalid or tampered token, and an expired token each get their own error message (`"Token has expired"` for the last). Every 401 from a token-protected route includes a `WWW-Authenticate: Bearer realm="recipe-box-api"` challenge, adding `error="invalid_token"` when a token was sent but rejected. `/login`'s 401 has no challenge, because it takes credentials in a JSON body and there's no standard scheme for that.
 - **403** means you're logged in but not allowed to do that.
 - **409** only ever means a real duplicate.
 

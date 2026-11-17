@@ -24,7 +24,7 @@ def load_authenticated_identity():
     auth_header = request.headers.get("Authorization", "")
     parts = auth_header.split(" ")
     if len(parts) != 2 or parts[0] != "Bearer":
-        return None, None, ("Missing or invalid Authorization header", 401)
+        return None, None, ("Missing or invalid Authorization header", None)
     token = parts[1]
     try:
         payload = jwt.decode(
@@ -33,33 +33,47 @@ def load_authenticated_identity():
             algorithms=["HS256"],
         )
     except jwt.ExpiredSignatureError:
-        return None, None, ("Token has expired", 401)
+        return None, None, ("Token has expired", "invalid_token")
     except jwt.PyJWTError:
-        return None, None, ("Invalid token", 401)
+        return None, None, ("Invalid token", "invalid_token")
     user_id = payload.get("sub")
     role = payload.get("role")
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
-        return None, None, ("Invalid user in token", 401)
+        return None, None, ("Invalid user in token", "invalid_token")
     return user_id, role, None
+
+
+def auth_error_response(message, error_code):
+    challenge = 'Bearer realm="recipe-box-api"'
+    if error_code:
+        challenge += (
+            f', error="{error_code}", error_description="{message}"'
+        )
+    response = jsonify({"error": message})
+    response.status_code = 401
+    response.headers["WWW-Authenticate"] = challenge
+    return response
+
 
 def can_modify_recipe(user_id, role, recipe):
     is_admin = (role == "admin")
     is_owner = (recipe["owner_id"] == user_id)
     return is_admin or is_owner
 
+
 def require_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         user_id, role, error = load_authenticated_identity()
         if error:
-            message, status = error
-            return jsonify({"error": message}), status
+            return auth_error_response(*error)
         g.current_user_id = user_id
         g.current_user_role = role
         return f(*args, **kwargs)
     return wrapper
+
 
 def get_db():
     if "db" not in g:
@@ -101,8 +115,7 @@ def list_recipes():
         return jsonify([recipe_to_dict(r) for r in rows])
     user_id, role, error = load_authenticated_identity()
     if error:
-        message, status = error
-        return jsonify({"error": message}), status
+        return auth_error_response(*error)
     if role == "admin":
         rows = db.execute("SELECT * FROM recipes ORDER BY id").fetchall()
     else:
@@ -129,8 +142,7 @@ def get_recipe(recipe_id):
         return jsonify(recipe_to_dict(row))
     user_id, role, error = load_authenticated_identity()
     if error:
-        message, status = error
-        return jsonify({"error": message}), status
+        return auth_error_response(*error)
     if not can_modify_recipe(user_id, role, row):
         return jsonify(
             {"error": "You do not have permission to view this recipe"}
@@ -310,7 +322,7 @@ def login():
         """
         SELECT id, username, password_hash, role
         FROM users
-        WHERE username = ?
+        WHERE username = ? COLLATE NOCASE
         """,
         (username,),
     ).fetchone()
