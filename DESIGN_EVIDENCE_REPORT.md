@@ -1,5 +1,7 @@
 # Design and Evidence Report | recipe-box API
 
+Snapshot from 2026-10-23. Later fixes are logged in `SECURITY_NOTES.md`.
+
 ## (1) Users table schema
 
 Confirmed against actual DB (sqlite3 recipes.db ".schema users")

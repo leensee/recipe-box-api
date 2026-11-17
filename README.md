@@ -37,7 +37,9 @@ python init_db.py
 python app.py
 ```
 
-The server runs at `http://localhost:5000`. `init_db.py` seeds three recipes, one of which ("Secret family hot sauce") is private and has no owner. It's safe to run again: it adds any missing columns to an existing database and only seeds an empty one.
+The server runs at `http://localhost:5000`. `init_db.py` seeds three recipes, one of which ("Secret family hot sauce") is private and has no owner. It's safe to run again: it adds any missing columns and indexes to an existing database and only seeds an empty one.
+
+If your `recipes.db` was created before 2026-11-17 and contains usernames or emails that differ only by case (for example `test_user` and `Test_User`), `init_db.py` stops with an `IntegrityError` when it adds the case-insensitive indexes. Rename or remove one account in each duplicate pair, or delete `recipes.db` (which erases all users and recipes) and run `init_db.py` again.
 
 ## Authentication
 
