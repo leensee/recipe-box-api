@@ -5,6 +5,7 @@ A Flask + SQLite JSON API for storing recipes, with user accounts, token-based a
 **Where it started:** an open CRUD skeleton with no notion of users. Anyone could list every recipe (private ones included), edit any recipe, or delete one permanently, all without identifying themselves.
 
 **Where it is now:**
+
 - **Accounts:** registration with scrypt-hashed passwords.
 - **Login:** a generic error for every failure, and equalized response times, so neither reveals whether a username exists.
 - **Tokens:** a signed JWT issued at login and required on every write.
@@ -15,7 +16,7 @@ A Flask + SQLite JSON API for storing recipes, with user accounts, token-based a
 
 Requires Python 3.10+.
 
-```
+```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -23,7 +24,7 @@ pip install -r requirements.txt
 
 Create a `.env` file in the project root with a signing secret. `.env` is git-ignored, so never commit it.
 
-```
+```bash
 python -c "import secrets; print('JWT_SECRET=' + secrets.token_urlsafe(32))" > .env
 ```
 
@@ -31,7 +32,7 @@ The app refuses to start without `JWT_SECRET`. Use at least 32 bytes; the comman
 
 Then create the database and start the server:
 
-```
+```bash
 python init_db.py
 python app.py
 ```
@@ -42,7 +43,7 @@ The server runs at `http://localhost:5000`. `init_db.py` seeds three recipes, on
 
 Register, then log in to get a token:
 
-```
+```bash
 curl -i -X POST http://localhost:5000/register \
 -H "Content-Type: application/json" \
 -d '{"username": "test_user", "email": "test@example.com", "password": "secret123"}'
@@ -54,7 +55,7 @@ curl -i -X POST http://localhost:5000/login \
 
 The login response includes a `token`, which is valid for one hour. Send it on protected requests:
 
-```
+```bash
 TOKEN=<paste token here>
 
 curl -i -X POST http://localhost:5000/recipes \
@@ -68,7 +69,7 @@ Logging out happens on the client: discard the token. The server keeps no sessio
 ## Access rules
 
 | Action | Who can do it |
-|---|---|
+| --- | --- |
 | Read a public recipe | Anyone |
 | Read a private recipe | Its owner, or an admin |
 | List recipes | Anyone sees public recipes; with a token, you also see your own private ones (admins see all) |
@@ -77,7 +78,7 @@ Logging out happens on the client: discard the token. The server keeps no sessio
 
 New accounts have the `user` role. To make an account an admin, update the database directly:
 
-```
+```bash
 sqlite3 recipes.db "UPDATE users SET role = 'admin' WHERE username = 'test_user';"
 ```
 
@@ -86,7 +87,7 @@ The role is read from the token, so log in again afterwards.
 ## Endpoints
 
 | Method | Path | Auth | Success | Errors |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | GET | / | None | 200 | |
 | POST | /register | None | 201 | 400 bad body · 409 duplicate username/email |
 | POST | /login | None | 200 + token | 400 missing fields · 401 invalid credentials |
@@ -97,6 +98,7 @@ The role is read from the token, so log in again afterwards.
 | DELETE | /recipes/&lt;id&gt; | Required | 204 | 401 · 403 not owner or admin · 404 |
 
 How the error codes are used:
+
 - **401** means the API couldn't establish who you are. A missing or malformed `Authorization` header, an invalid or tampered token, and an expired token each get their own error message (`"Token has expired"` for the last).
 - **403** means you're logged in but not allowed to do that.
 - **409** only ever means a real duplicate.

@@ -1,11 +1,13 @@
 # Security Audit – Recipe API
   
 ## 1. Safe Password Storage
+
 - **Database:** SQLite  
 - **Password field:** scrypt hash string (not readable, long random-looking value)  
 - **Conclusion:** Passwords are stored as hashes, not plaintext.
   
 ## 2. Authentication (Identity) Checks
+
 **Endpoint tested:** POST /recipes  
 
 - No token:
@@ -21,6 +23,7 @@
 **Conclusion:** Endpoint correctly requires a valid JWT and returns 401 for missing/invalid identity.
 
 ## 3. Authorization (Access Control) Checks
+
 **Endpoints tested:** DELETE /recipes/5 and DELETE /recipes/3
   
 - No token:
@@ -42,6 +45,7 @@
 **Conclusion:** Only the owner or admin can delete; 401 vs 403 are used correctly.
 
 ## 4. Centralized Protections
+
 - **Decorator/middleware:** `@require_auth` → `load_authenticated_identity`  
-- **Protected routes using it:** POST /recipes, PATCH /recipes/<id>, DELETE /recipes/<id>  
+- **Protected routes using it:** POST /recipes, PATCH /recipes/{id}, DELETE /recipes/{id}
 - **Conclusion:** Auth checks are centralized; no ad-hoc per-route token parsing.
